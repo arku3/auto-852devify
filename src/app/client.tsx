@@ -136,45 +136,46 @@ function OutputCanvas({
     setReady(false);
     const t = setTimeout(() => {
       // console.log('inTimeout');
-      if (!ref.current) {
-        return;
-      }
-      const context = ref.current.getContext('2d', { willReadFrequently: true });
-      if (!context) {
-        return;
-      }
-
       const bgImage = document.createElement('img');
       bgImage.src = baseImageUri;
-      const glasses = document.createElement('img');
-      glasses.src = '/glasses-red.png';
-      ref.current.height = bgImage.height;
-      ref.current.width = bgImage.width;
+      bgImage.onload = () => {
+        const glasses = document.createElement('img');
+        glasses.src = '/glasses-red.png';
+        glasses.onload = () => {
+          if (!ref.current) {
+            return;
+          }
+          const context = ref.current.getContext('2d', { willReadFrequently: true });
+          if (!context) {
+            return;
+          }
+          ref.current.height = bgImage.height;
+          ref.current.width = bgImage.width;
+          context.drawImage(bgImage, 0, 0);
+          try {
+            for (const face of detections) {
+              const scaleFactor = 2.7;
+              const leftEye = middlePoint(face.landmarks.getLeftEye());
+              const rightEye = middlePoint(face.landmarks.getRightEye());
+              const width = Math.abs(leftEye.x - rightEye.x) * scaleFactor;
+              const height = Math.abs((width * 80) / 150); // the red-glasses image is 150x80
+              console.log({ width, height, leftEye, rightEye });
 
-      context.drawImage(bgImage, 0, 0);
-      try {
-        for (const face of detections) {
-          const scaleFactor = 2.7;
-          const leftEye = middlePoint(face.landmarks.getLeftEye());
-          const rightEye = middlePoint(face.landmarks.getRightEye());
-          const width = Math.abs(leftEye.x - rightEye.x) * scaleFactor;
-          const height = Math.abs((width * 80) / 150); // the red-glasses image is 150x80
-          console.log({ width, height, leftEye, rightEye });
+              const dx = rightEye.x - leftEye.x;
+              const dy = rightEye.y - leftEye.y;
+              const angle = Math.atan2(dy, dx);
 
-          const dx = rightEye.x - leftEye.x;
-          const dy = rightEye.y - leftEye.y;
-          const angle = Math.atan2(dy, dx);
-
-          // console.log(width, height, leftEye, rightEye);
-          // context.drawImage(glasses, leftEye.x - width / 3, leftEye.y - height / 2, width, height);
-          drawRotatedImage(context, glasses, leftEye.x, leftEye.y, width, height, angle);
-        }
-        setReady(true);
-      } catch (e) {
-        console.log(e);
-      }
-    }, 100);
-
+              // console.log(width, height, leftEye, rightEye);
+              // context.drawImage(glasses, leftEye.x - width / 3, leftEye.y - height / 2, width, height);
+              drawRotatedImage(context, glasses, leftEye.x, leftEye.y, width, height, angle);
+            }
+            setReady(true);
+          } catch (e) {
+            console.log(e);
+          }
+        };
+      };
+    }, 50);
     return () => clearTimeout(t);
   }, [ref, detections, baseImageUri]);
 

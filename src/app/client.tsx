@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 interface FileInputFormData {
   files: File[];
 }
-
+const GLASSES_SCALE_FACTOR = 2.7;
 const ImageAtom = atom<{ uri: string | null; minConfidence: number }>({ uri: null, minConfidence: 0.3 });
 
 const FileInputForm = () => {
@@ -88,6 +88,7 @@ function middlePoint(points: faceapi.Point[]) {
   const y = points.reduce((acc, curr) => acc + curr.y, 0) / points.length;
   return { x, y };
 }
+
 function drawRotatedImage(
   context: CanvasRenderingContext2D,
   image: CanvasImageSource,
@@ -100,21 +101,24 @@ function drawRotatedImage(
   // save the current co-ordinate system
   // before we screw with it
   context.save();
-
   // move to the middle of where we want to draw our image
   context.translate(x, y);
-
-  // rotate around that point, converting our
-  // angle from degrees to radians
-  // context.rotate(angle * TO_RADIANS);
+  // rotate around that point
   context.rotate(angle);
-
   // draw it up and to the left by half the width
   // and height of the image
   context.drawImage(image, -(width / 2), -(height / 2), width, height);
-
   // and restore the coords to how they were when we began
   context.restore();
+}
+
+function createImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = document.createElement('img');
+    img.src = src;
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+  });
 }
 
 function OutputCanvas({
@@ -134,47 +138,37 @@ function OutputCanvas({
       return;
     }
     setReady(false);
-    const t = setTimeout(() => {
+    const t = setTimeout(async () => {
+      if (!ref.current) {
+        return;
+      }
+      const context = ref.current.getContext('2d', { willReadFrequently: true });
+      if (!context) {
+        return;
+      }
       // console.log('inTimeout');
-      const bgImage = document.createElement('img');
-      bgImage.src = baseImageUri;
-      bgImage.onload = () => {
-        const glasses = document.createElement('img');
-        glasses.src = '/glasses-red.png';
-        glasses.onload = () => {
-          if (!ref.current) {
-            return;
-          }
-          const context = ref.current.getContext('2d', { willReadFrequently: true });
-          if (!context) {
-            return;
-          }
-          ref.current.height = bgImage.height;
-          ref.current.width = bgImage.width;
-          context.drawImage(bgImage, 0, 0);
-          try {
-            for (const face of detections) {
-              const scaleFactor = 2.7;
-              const leftEye = middlePoint(face.landmarks.getLeftEye());
-              const rightEye = middlePoint(face.landmarks.getRightEye());
-              const width = Math.abs(leftEye.x - rightEye.x) * scaleFactor;
-              const height = Math.abs((width * 80) / 150); // the red-glasses image is 150x80
-              console.log({ width, height, leftEye, rightEye });
+      const bgImage = await createImageElement(baseImageUri);
+      const glasses = await createImageElement('/glasses-red.png');
+      ref.current.height = bgImage.height;
+      ref.current.width = bgImage.width;
+      context.drawImage(bgImage, 0, 0);
 
-              const dx = rightEye.x - leftEye.x;
-              const dy = rightEye.y - leftEye.y;
-              const angle = Math.atan2(dy, dx);
+      // Reference: https://github.com/akirawuc/auto-nounify-server/blob/main/services/nounify/main.py#L35
+      for (const face of detections) {
+        const leftEye = middlePoint(face.landmarks.getLeftEye());
+        const rightEye = middlePoint(face.landmarks.getRightEye());
+        const width = Math.abs(leftEye.x - rightEye.x) * GLASSES_SCALE_FACTOR;
+        const height = Math.abs((width * 80) / 150); // keep aspect-ratio the glasses-red.png is 150x80
 
-              // console.log(width, height, leftEye, rightEye);
-              // context.drawImage(glasses, leftEye.x - width / 3, leftEye.y - height / 2, width, height);
-              drawRotatedImage(context, glasses, leftEye.x, leftEye.y, width, height, angle);
-            }
-            setReady(true);
-          } catch (e) {
-            console.log(e);
-          }
-        };
-      };
+        const dx = rightEye.x - leftEye.x;
+        const dy = rightEye.y - leftEye.y;
+        const angle = Math.atan2(dy, dx);
+
+        // console.log(width, height, leftEye, rightEye);
+        // context.drawImage(glasses, leftEye.x - width / 3, leftEye.y - height / 2, width, height);
+        drawRotatedImage(context, glasses, leftEye.x, leftEye.y, width, height, angle);
+      }
+      setReady(true);
     }, 50);
     return () => clearTimeout(t);
   }, [ref, detections, baseImageUri]);
